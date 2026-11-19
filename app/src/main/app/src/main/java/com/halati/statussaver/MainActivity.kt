@@ -4,10 +4,14 @@ package com.halati.statussaver
 import android.app.Activity
 import android.content.ContentValues
 import android.content.Intent
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.provider.MediaStore
-import android.widget.Button
+import android.view.Gravity
+import android.view.View
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -15,90 +19,476 @@ import android.widget.Toast
 import androidx.documentfile.provider.DocumentFile
 
 class MainActivity : Activity() {
+
     private val prefs by lazy {
         getSharedPreferences("halati_folders", MODE_PRIVATE)
     }
 
-    private lateinit var results: LinearLayout
-    private var pendingKey: String = "wa"
+    private val bg = Color.rgb(13, 17, 19)
+    private val panel = Color.rgb(25, 32, 34)
+    private val green = Color.rgb(27, 190, 157)
+    private val white = Color.WHITE
+    private val muted = Color.rgb(165, 178, 177)
+
+    private var currentTab = 0
+    private var pendingKey = "wa"
 
     private val sources = listOf(
-        "wa" to "واتساب العادي",
-        "business" to "واتساب الأعمال",
-        "gb" to "GBWhatsApp"
+        Triple("wa", "واتساب العادي", "◉"),
+        Triple("business", "واتساب الأعمال", "▣"),
+        Triple("gb", "جي بي واتساب", "◆")
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = android.graphics.Color.rgb(10, 10, 10)
-        window.navigationBarColor = android.graphics.Color.rgb(10, 10, 10)
+
+        window.statusBarColor = bg
+        window.navigationBarColor = bg
+
         render()
     }
 
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
+
+    private fun makeText(
+        value: String,
+        size: Float,
+        color: Int = white,
+        bold: Boolean = false
+    ): TextView {
+        return TextView(this).apply {
+            text = value
+            textSize = size
+            setTextColor(color)
+            gravity = Gravity.CENTER_VERTICAL
+            if (bold) setTypeface(null, Typeface.BOLD)
+        }
+    }
+
+    private fun rounded(color: Int, radius: Int = 16): GradientDrawable {
+        return GradientDrawable().apply {
+            setColor(color)
+            cornerRadius = dp(radius).toFloat()
+        }
+    }
+
+    private fun button(
+        title: String,
+        action: () -> Unit
+    ): TextView {
+        return TextView(this).apply {
+            text = title
+            textSize = 14f
+            setTextColor(white)
+            gravity = Gravity.CENTER
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = rounded(green, 12)
+            setOnClickListener { action() }
+        }
+    }
+
+    private fun addSpace(parent: LinearLayout, height: Int) {
+        parent.addView(
+            View(this),
+            LinearLayout.LayoutParams(1, dp(height))
+        )
+    }
+
     private fun render() {
-        val scroll = ScrollView(this)
-        val page = LinearLayout(this).apply {
+        val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 28, 24, 28)
-            setBackgroundColor(android.graphics.Color.rgb(10, 10, 10))
+            setBackgroundColor(bg)
         }
 
-        scroll.addView(page)
-        setContentView(scroll)
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(18), dp(20), dp(14))
+            setBackgroundColor(bg)
+        }
 
-        page.addView(label("حالاتي", 30f, true))
-        page.addView(label("حافظ الحالات والصور والفيديوهات", 15f, false))
-        page.addView(label("اختر مجلد الحالات لكل نسخة واتساب مرة واحدة.", 14f, false))
+        val top = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
 
-        sources.forEach { (key, title) ->
-            val saved = prefs.getString(key, null)
+        val logo = makeText("ح", 25f, bg, true).apply {
+            gravity = Gravity.CENTER
+            background = rounded(green, 14)
+            layoutParams = LinearLayout.LayoutParams(dp(46), dp(46))
+        }
 
-            val row = LinearLayout(this).apply {
+        val titleBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), 0, 0, 0)
+        }
+
+        titleBox.addView(makeText("حالتي", 23f, white, true))
+        titleBox.addView(makeText("حافظ الحالات والوسائط", 12f, muted))
+
+        top.addView(logo)
+        top.addView(titleBox)
+
+        val spacer = View(this)
+        top.addView(
+            spacer,
+            LinearLayout.LayoutParams(0, 1, 1f)
+        )
+
+        top.addView(makeText("●", 15f, green))
+
+        header.addView(top)
+        root.addView(header)
+
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+        }
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(8), dp(18), dp(20))
+        }
+
+        scroll.addView(content)
+
+        when (currentTab) {
+            0 -> showHome(content)
+            1 -> showSource(content, "wa")
+            2 -> showSource(content, "business")
+            3 -> showSource(content, "gb")
+            4 -> showSettings(content)
+        }
+
+        root.addView(
+            scroll,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
+
+        val nav = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(dp(4), dp(8), dp(4), dp(8))
+            setBackgroundColor(Color.rgb(20, 26, 28))
+        }
+
+        val navItems = listOf(
+            "الرئيسية",
+            "واتساب",
+            "الأعمال",
+            "GB",
+            "الإعدادات"
+        )
+
+        navItems.forEachIndexed { index, name ->
+            val item = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(14, 14, 14, 14)
-                setBackgroundColor(android.graphics.Color.rgb(27, 27, 27))
+                gravity = Gravity.CENTER
+                setPadding(dp(2), dp(5), dp(2), dp(5))
+                setOnClickListener {
+                    currentTab = index
+                    render()
+                }
             }
 
-            row.addView(label(title, 18f, true))
-            row.addView(
-                label(
-                    if (saved == null) "لم يتم اختيار المجلد بعد"
-                    else "تم ربط مجلد الحالات",
-                    13f,
-                    false
-                )
+            val icon = listOf("⌂", "◉", "▣", "◆", "⚙")[index]
+
+            item.addView(
+                makeText(
+                    icon,
+                    20f,
+                    if (currentTab == index) green else muted,
+                    true
+                ).apply { gravity = Gravity.CENTER }
             )
 
-            row.addView(
-                actionButton(
-                    if (saved == null) "اختيار مجلد الحالات"
-                    else "تغيير المجلد"
-                ) {
-                    pendingKey = key
-                    startActivityForResult(
-                        Intent(Intent.ACTION_OPEN_DOCUMENT_TREE),
-                        410
-                    )
+            item.addView(
+                makeText(
+                    name,
+                    10f,
+                    if (currentTab == index) green else muted,
+                    currentTab == index
+                ).apply { gravity = Gravity.CENTER }
+            )
+
+            nav.addView(
+                item,
+                LinearLayout.LayoutParams(0, dp(48), 1f)
+            )
+        }
+
+        root.addView(nav)
+        setContentView(root)
+    }
+
+    private fun showHome(page: LinearLayout) {
+        page.addView(makeText("أهلاً بك في حالتي 👋", 21f, white, true))
+        addSpace(page, 5)
+        page.addView(
+            makeText("احفظ حالات الصور والفيديو بسهولة", 14f, muted)
+        )
+
+        addSpace(page, 22)
+
+        val welcome = card()
+        welcome.addView(makeText("حالاتك في مكان واحد", 19f, green, true))
+        addSpace(welcome, 8)
+        welcome.addView(
+            makeText(
+                "اختر نسخة واتساب لعرض الحالات المتاحة وحفظها على جهازك.",
+                14f,
+                white
+            )
+        )
+        page.addView(welcome)
+
+        addSpace(page, 18)
+        page.addView(makeText("اختر التطبيق", 18f, white, true))
+        addSpace(page, 8)
+
+        sources.forEachIndexed { index, source ->
+            val row = card()
+
+            val line = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+
+            line.addView(
+                makeText(
+                    "${source.third}   ${source.second}",
+                    16f,
+                    white,
+                    true
+                ),
+                LinearLayout.LayoutParams(0, dp(45), 1f)
+            )
+
+            line.addView(
+                button("فتح") {
+                    currentTab = index + 1
+                    render()
                 }
             )
 
-            val params = LinearLayout.LayoutParams(-1, -2)
-            params.setMargins(0, 18, 0, 0)
-            page.addView(row, params)
+            row.addView(line)
+
+            val saved = prefs.getString(source.first, null)
+            row.addView(
+                makeText(
+                    if (saved == null) "لم يتم ربط مجلد الحالات"
+                    else "مجلد الحالات مرتبط",
+                    12f,
+                    if (saved == null) muted else green
+                )
+            )
+
+            page.addView(row)
+            addSpace(page, 10)
         }
 
-        page.addView(actionButton("عرض الحالات المتاحة") {
-            showStatuses()
-        })
-
-        results = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-
-        page.addView(results)
+        addSpace(page, 10)
+        page.addView(
+            makeText(
+                "ملاحظة: يجب اختيار مجلد الحالات ومنح التطبيق الإذن بالوصول إليه.",
+                12f,
+                muted
+            )
+        )
     }
 
-    @Deprecated("Deprecated in Android API; retained for broad device compatibility")
+    private fun card(): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(15), dp(14), dp(15), dp(14))
+            background = rounded(panel, 16)
+        }
+    }
+
+    private fun showSource(page: LinearLayout, key: String) {
+        val source = sources.first { it.first == key }
+
+        page.addView(
+            makeText(source.second, 21f, white, true)
+        )
+        addSpace(page, 5)
+        page.addView(
+            makeText("الصور والفيديوهات المتاحة للحفظ", 13f, muted)
+        )
+        addSpace(page, 16)
+
+        val saved = prefs.getString(key, null)
+
+        val folderCard = card()
+        folderCard.addView(
+            makeText(
+                if (saved == null) "لم يتم اختيار مجلد الحالات"
+                else "تم ربط مجلد الحالات بنجاح",
+                14f,
+                if (saved == null) muted else green,
+                true
+            )
+        )
+
+        addSpace(folderCard, 10)
+
+        folderCard.addView(
+            button(
+                if (saved == null) "اختيار مجلد الحالات"
+                else "تغيير مجلد الحالات"
+            ) {
+                pendingKey = key
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+                startActivityForResult(intent, 410)
+            }
+        )
+
+        page.addView(folderCard)
+        addSpace(page, 18)
+
+        page.addView(
+            button("عرض الحالات المتاحة") {
+                render()
+            }
+        )
+
+        addSpace(page, 14)
+        page.addView(makeText("الحالات والوسائط", 18f, white, true))
+        addSpace(page, 10)
+
+        if (saved == null) {
+            page.addView(
+                makeText(
+                    "اختر مجلد الحالات أولاً حتى نتمكن من عرض الملفات.",
+                    13f,
+                    muted
+                )
+            )
+            return
+        }
+
+        val folder = try {
+            DocumentFile.fromTreeUri(this, Uri.parse(saved))
+        } catch (_: Exception) {
+            null
+        }
+
+        if (folder == null || !folder.canRead()) {
+            page.addView(
+                makeText("تعذر الوصول إلى المجلد. حاول ربطه من جديد.", 13f, muted)
+            )
+            return
+        }
+
+        val files = try {
+            folder.listFiles()
+                .filter {
+                    it.isFile && (
+                        it.type?.startsWith("image/") == true ||
+                        it.type?.startsWith("video/") == true
+                    )
+                }
+                .sortedByDescending { it.lastModified() }
+        } catch (_: Exception) {
+            emptyList()
+        }
+
+        if (files.isEmpty()) {
+            page.addView(
+                makeText(
+                    "لا توجد حالات ظاهرة حالياً. شاهد الحالات في واتساب أولاً، وتأكد من اختيار مجلد .Statuses الصحيح.",
+                    13f,
+                    muted
+                )
+            )
+            return
+        }
+
+        files.forEach { file ->
+            val item = card()
+
+            item.addView(
+                makeText(
+                    file.name ?: "ملف وسائط",
+                    14f,
+                    white,
+                    true
+                )
+            )
+
+            addSpace(item, 8)
+
+            item.addView(
+                makeText(
+                    if (file.type?.startsWith("video/") == true) "فيديو" else "صورة",
+                    12f,
+                    green
+                )
+            )
+
+            addSpace(item, 8)
+
+            val actions = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+            }
+
+            actions.addView(
+                button("فتح") { openFile(file) },
+                LinearLayout.LayoutParams(0, dp(44), 1f)
+            )
+
+            val gap = View(this)
+            actions.addView(gap, LinearLayout.LayoutParams(dp(8), 1))
+
+            actions.addView(
+                button("حفظ") { saveFile(file) },
+                LinearLayout.LayoutParams(0, dp(44), 1f)
+            )
+
+            item.addView(actions)
+            addSpace(page, 9)
+            page.addView(item)
+        }
+    }
+
+    private fun showSettings(page: LinearLayout) {
+        page.addView(makeText("الإعدادات", 22f, white, true))
+        addSpace(page, 16)
+
+        val box = card()
+        box.addView(makeText("حالتي", 19f, green, true))
+        addSpace(box, 8)
+        box.addView(
+            makeText("تطبيق مستقل لحفظ حالات الصور والفيديو.", 14f, white)
+        )
+        addSpace(box, 12)
+        box.addView(
+            makeText("الإصدار 1.0.0", 12f, muted)
+        )
+        page.addView(box)
+
+        addSpace(page, 14)
+
+        val note = card()
+        note.addView(makeText("طريقة الاستخدام", 16f, white, true))
+        addSpace(note, 8)
+        note.addView(
+            makeText(
+                "1. افتح قسم نسخة واتساب المطلوبة.\n\n" +
+                "2. اختر مجلد الحالات وامنح الإذن.\n\n" +
+                "3. اعرض الملفات المتاحة.\n\n" +
+                "4. افتح الملف أو احفظه في مجلد Download/Halati.",
+                14f,
+                muted
+            )
+        )
+        page.addView(note)
+    }
+
+    @Deprecated("Retained for compatibility")
     override fun onActivityResult(
         requestCode: Int,
         resultCode: Int,
@@ -106,124 +496,66 @@ class MainActivity : Activity() {
     ) {
         super.onActivityResult(requestCode, resultCode, data)
 
-        if (requestCode == 410 && resultCode == RESULT_OK) {
-            val uri = data?.data ?: return
+        if (requestCode != 410 || resultCode != RESULT_OK) return
 
+        val uri = data?.data ?: return
+
+        try {
             val flags = data.flags and (
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or
                 Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             )
 
             contentResolver.takePersistableUriPermission(uri, flags)
-            prefs.edit().putString(pendingKey, uri.toString()).apply()
+
+            prefs.edit()
+                .putString(pendingKey, uri.toString())
+                .apply()
 
             Toast.makeText(
                 this,
-                "تم ربط المجلد. اضغط عرض الحالات.",
+                "تم ربط المجلد بنجاح",
                 Toast.LENGTH_LONG
             ).show()
 
             render()
-        }
-    }
 
-    private fun showStatuses() {
-        results.removeAllViews()
-        results.addView(label("الحالات المكتشفة", 20f, true))
-
-        var count = 0
-
-        sources.forEach { (key, title) ->
-            val raw = prefs.getString(key, null) ?: return@forEach
-
-            val folder = DocumentFile.fromTreeUri(
+        } catch (e: Exception) {
+            Toast.makeText(
                 this,
-                Uri.parse(raw)
-            ) ?: return@forEach
-
-            folder.listFiles()
-                .filter {
-                    it.isFile &&
-                    (
-                        it.type?.startsWith("image/") == true ||
-                        it.type?.startsWith("video/") == true
-                    )
-                }
-                .sortedByDescending { it.lastModified() }
-                .forEach { file ->
-                    count++
-
-                    val row = LinearLayout(this).apply {
-                        orientation = LinearLayout.VERTICAL
-                        setPadding(12, 12, 12, 12)
-                        setBackgroundColor(
-                            android.graphics.Color.rgb(24, 24, 24)
-                        )
-                    }
-
-                    row.addView(
-                        label(
-                            "$title • ${file.name ?: "وسائط"}",
-                            14f,
-                            true
-                        )
-                    )
-
-                    row.addView(actionButton("فتح") {
-                        openFile(file)
-                    })
-
-                    row.addView(
-                        actionButton("حفظ في مجلد Download/Halati") {
-                            saveFile(file)
-                        }
-                    )
-
-                    val p = LinearLayout.LayoutParams(-1, -2)
-                    p.setMargins(0, 8, 0, 0)
-                    results.addView(row, p)
-                }
-        }
-
-        if (count == 0) {
-            results.addView(
-                label(
-                    "لم نعثر على ملفات. تأكد أنك اخترت مجلد .Statuses الصحيح وأنك شاهدت الحالات في واتساب أولاً.",
-                    14f,
-                    false
-                )
-            )
+                "تعذر ربط المجلد: ${e.message}",
+                Toast.LENGTH_LONG
+            ).show()
         }
     }
 
     private fun openFile(file: DocumentFile) {
         try {
-            val uri = file.uri
-            val mime = file.type ?: "*/*"
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(file.uri, file.type ?: "*/*")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
 
-            startActivity(
-                Intent(Intent.ACTION_VIEW)
-                    .setDataAndType(uri, mime)
-                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            )
+            startActivity(Intent.createChooser(intent, "فتح باستخدام"))
+
         } catch (_: Exception) {
             Toast.makeText(
                 this,
-                "تعذر فتح الملف على هذا الجهاز.",
+                "لا يوجد تطبيق مناسب لفتح هذا الملف",
                 Toast.LENGTH_SHORT
             ).show()
         }
     }
 
     private fun saveFile(file: DocumentFile) {
+        var destination: Uri? = null
+
         try {
+            val name = file.name ?: "halati_${System.currentTimeMillis()}"
             val mime = file.type ?: "application/octet-stream"
 
             val values = ContentValues().apply {
-                put(
-                    MediaStore.MediaColumns.DISPLAY_NAME,
-                    file.name ?: "halati_${System.currentTimeMillis()}"
-                )
+                put(MediaStore.MediaColumns.DISPLAY_NAME, name)
                 put(MediaStore.MediaColumns.MIME_TYPE, mime)
                 put(
                     MediaStore.MediaColumns.RELATIVE_PATH,
@@ -236,34 +568,41 @@ class MainActivity : Activity() {
                 MediaStore.VOLUME_EXTERNAL_PRIMARY
             )
 
-            val dest = contentResolver.insert(collection, values)
-                ?: throw IllegalStateException("تعذر إنشاء ملف الوجهة")
+            destination = contentResolver.insert(collection, values)
+                ?: throw Exception("تعذر إنشاء ملف الحفظ")
 
-            contentResolver.openInputStream(file.uri).use { input ->
-                if (input == null) {
-                    throw IllegalStateException("تعذر قراءة المصدر")
-                }
+            val input = contentResolver.openInputStream(file.uri)
+                ?: throw Exception("تعذر قراءة الملف الأصلي")
 
-                contentResolver.openOutputStream(dest).use { output ->
-                    if (output == null) {
-                        throw IllegalStateException("تعذر الكتابة")
-                    }
+            val output = contentResolver.openOutputStream(destination)
+                ?: throw Exception("تعذر الكتابة في مجلد التنزيلات")
 
-                    input.copyTo(output)
+            input.use { source ->
+                output.use { target ->
+                    source.copyTo(target)
                 }
             }
 
-            values.clear()
-            values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-            contentResolver.update(dest, values, null, null)
+            val completed = ContentValues().apply {
+                put(MediaStore.MediaColumns.IS_PENDING, 0)
+            }
+
+            contentResolver.update(destination, completed, null, null)
 
             Toast.makeText(
                 this,
-                "تم الحفظ والتحقق من إنشاء الملف",
+                "تم حفظ الملف في Download/Halati",
                 Toast.LENGTH_LONG
             ).show()
 
         } catch (e: Exception) {
+            destination?.let {
+                try {
+                    contentResolver.delete(it, null, null)
+                } catch (_: Exception) {
+                }
+            }
+
             Toast.makeText(
                 this,
                 "فشل الحفظ: ${e.message ?: "خطأ غير معروف"}",
@@ -271,37 +610,4 @@ class MainActivity : Activity() {
             ).show()
         }
     }
-
-    private fun label(
-        text: String,
-        size: Float,
-        bold: Boolean
-    ): TextView =
-        TextView(this).apply {
-            this.text = text
-            textSize = size
-
-            setTextColor(
-                if (bold) android.graphics.Color.WHITE
-                else android.graphics.Color.LTGRAY
-            )
-
-            if (bold) {
-                setTypeface(
-                    typeface,
-                    android.graphics.Typeface.BOLD
-                )
-            }
-
-            setPadding(0, 8, 0, 8)
-        }
-
-    private fun actionButton(
-        text: String,
-        action: () -> Unit
-    ): Button =
-        Button(this).apply {
-            this.text = text
-            setOnClickListener { action() }
-        }
 }
